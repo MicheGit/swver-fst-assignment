@@ -1,3 +1,41 @@
+/**
+ * expr4 = expr5 ( ('+' | '-') expr5 )*
+ */
+fn expr_4(input: &str) -> IResult<&str, Term> {
+    let (mut input,  mut t1) = expr_6(input)?; // expr6 sì
+    while let Ok((right_side, op)) = alt((symbol("+"), symbol("-"), symbol("*")))(input) {
+        match op {
+            "+" => {
+                let (input2, t2) = expr_5(right_side)?;
+                t1 = Term::Add(Box::new(t1.clone()), Box::new(t2));
+                input = input2;
+            },
+            "-" => {
+                let (input2, t2) = expr_5(right_side)?;
+                t1 = Term::Sub(Box::new(t1.clone()), Box::new(t2));
+                input = input2;
+            },
+            _ => panic!("The alternative on symbols + and - has returned something that was not + or -. This shouldn't happen.")
+        }
+    }
+    Ok((input, t1))
+}
+
+/**
+ * expr5 = expr6 ('*' expr6)*
+ * 
+ * in teoria sarebbe anche / ma in rec non lo abbiamo per grazia del signore
+ */
+fn expr_5(input: &str) -> IResult<&str, Term> {
+    let (mut input, mut t1) = expr_6(input)?;
+    while let Ok((right_side, _)) = symbol("*")(input) {
+        let (input2, t2) = expr_6(right_side)?;
+        t1 = Term::Mul(Box::new(t1.clone()), Box::new(t2));
+        input = input2;
+    }
+    Ok((input, t1))
+}
+
 pub fn nat(input: &str) -> IResult<&str, i32> {
     let (input, digits) = digit1::<&str, Error<&str>>(input)?;
     Ok((input, digits.parse::<i32>().unwrap()))
