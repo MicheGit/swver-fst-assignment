@@ -7,18 +7,18 @@ use crate::interpreter::Term;
 type FnEnv_va = HashMap<String, Rc<dyn Fn(Vec<i32>) -> Option<i32>>>;
 
 #[derive(Debug, Clone)]
-pub struct VarEnv_va {
+struct VarEnv_va {
     memory: HashMap<String, i32>
 }
 
 impl VarEnv_va {
-    pub fn new() -> VarEnv_va {
+    fn new() -> VarEnv_va {
         VarEnv_va { memory: HashMap::new() }
     }
-    pub fn update(&mut self, arg_name: String, arg_val: i32) -> () {
+    fn update(&mut self, arg_name: String, arg_val: i32) -> () {
         self.memory.insert(arg_name, arg_val);
     }
-    pub fn lookup(&self, var: &String) -> i32 {
+    fn lookup(&self, var: &String) -> i32 {
         match self.memory.get(var) {
             Some(n) => *n,
             None => panic!("The variable {} is not defined.", var)

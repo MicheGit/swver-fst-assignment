@@ -10,7 +10,7 @@ fn main() {
         let content = content.replace("\r\n", "\n");
         let (_, decls) = parser_pc::parse_program(&content).unwrap();
         println!("{}", interpreter::run_rec_program_na(decls.clone()));
-        //println!("{}", interpreter::run_rec_program_va(decls));
+        println!("{}", interpreter::run_rec_program_va(decls));
     } else {
         panic!("File {} not found", filename);
     };

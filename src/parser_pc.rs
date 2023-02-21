@@ -1,4 +1,4 @@
-use nom::{branch::alt, bytes::complete::tag, IResult, sequence::{delimited, pair}, character::complete::{space0, space1, alpha1, alphanumeric0, newline, multispace0, char}, error::{ParseError, Error, ErrorKind}, Parser, multi::{many0, many1}};
+use nom::{branch::alt, bytes::complete::tag, IResult, sequence::{delimited, pair}, character::complete::{space0, space1, alpha1, alphanumeric0, newline, multispace0}, error::{ParseError, Error, ErrorKind}, Parser, multi::{many0, many1}};
 
 // Data types
 
@@ -24,7 +24,7 @@ pub enum Term {
 // Parser
 
 pub fn parse_program<'a>(input: &'a str) -> IResult<&'a str, Vec<Decl>> {
-    let (rest, program) = many1(|s: &'a str| -> IResult<&'a str, Decl> {
+    let (_, program) = many1(|s: &'a str| -> IResult<&'a str, Decl> {
         let (mut s, t) = decl(s)?;
         if let Ok((ia, _)) = empty_lines(s) {
             s = ia;
