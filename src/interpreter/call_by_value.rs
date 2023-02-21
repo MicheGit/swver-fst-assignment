@@ -1,4 +1,8 @@
-use super::*;
+use std::{collections::HashMap, rc::Rc};
+
+use super::Program;
+
+use crate::interpreter::Term;
 
 type FnEnv_va = HashMap<String, Rc<dyn Fn(Vec<i32>) -> Option<i32>>>;
 
@@ -214,7 +218,7 @@ mod tests {
     #[test]
     fn eval_va_app() {
         if let Ok((_, p)) = parse_program("fact(x) = if x then 1 else fact(x-1) * x") {
-            let program = rec_program_from_decls(p);
+            let program = super::super::rec_program_from_decls(p);
             assert_eq!(fix_point_iteration_va(&program, "fact".to_owned(), vec![5]), 120);
         } else {
             assert!(false);

@@ -23,4 +23,4 @@ undef() = undef() + 1
 shouldworkna() = z(undef())
 shouldnotworkva() = z(undef())
 
-main() = z(undef()) + fib(10) + lt(4, 10)
+main() = ackermann(4, 0)
