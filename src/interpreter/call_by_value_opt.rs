@@ -1,4 +1,4 @@
-use std::{collections::HashMap, rc::Rc};
+use std::{collections::{HashMap, LinkedList}};
 
 use super::Program;
 
@@ -11,9 +11,6 @@ impl Drop for PrintOnDrop {
         println!("{}", self.0);
     }
 }
-
-
-type FnEnv_va = HashMap<String, Decl>;
 
 #[derive(Debug, Clone)]
 struct VarEnv_va {
@@ -72,7 +69,7 @@ pub fn fix_point_iteration_va(p: &Program, fn_name: String, args: Vec<i32>) -> i
     }
 }
 
-fn eval_va(kleene_iteration_index: u64, p: &Program, var_env: VarEnv_va, term: Term) -> Option<i32> {
+fn eval_va(kleene_index: u64, p: &Program, var_env: VarEnv_va, term: Term) -> Option<i32> {
     // println!("Entering eval_va for term {:?} kleene max iterations is {}", &term, kleene_iteration_index);
     // let _overwritten = PrintOnDrop("Closed eval_va stack");
 
@@ -80,35 +77,36 @@ fn eval_va(kleene_iteration_index: u64, p: &Program, var_env: VarEnv_va, term: T
     let mut term = term;
     let mut result = None;
 
-    for _ in 1..kleene_iteration_index { // parte da 1 perché 0 sarebbe \bot
+    for _ in 1..kleene_index { // parte da 1 perché 0 sarebbe \bot
         // println!("Shamalama ding dong");
+        let kleene_index = kleene_index - 1; // nella prossima iterazione si usa \varphi_{i-1}
         let term_to_move = term.clone();
         let var_env_to_move = var_env.clone();
         result = match term_to_move {
             Term::Num(n) => Some(n),
             Term::Var(x) => Some(var_env_to_move.lookup(&x)),
             Term::Add(t1, t2) => {
-                let n1 = eval_va(kleene_iteration_index, p, var_env_to_move.clone(), *t1)?;
-                let n2 = eval_va(kleene_iteration_index, p, var_env_to_move, *t2)?;
+                let n1 = eval_va(kleene_index, p, var_env_to_move.clone(), *t1)?;
+                let n2 = eval_va(kleene_index, p, var_env_to_move, *t2)?;
                 Some(n1 + n2)
             },
             Term::Sub(t1, t2) => {
-                let n1 = eval_va(kleene_iteration_index, p, var_env_to_move.clone(), *t1)?;
-                let n2 = eval_va(kleene_iteration_index, p, var_env_to_move, *t2)?;
+                let n1 = eval_va(kleene_index, p, var_env_to_move.clone(), *t1)?;
+                let n2 = eval_va(kleene_index, p, var_env_to_move, *t2)?;
                 Some(n1 - n2)
             },
             Term::Mul(t1, t2) => {
-                let n1 = eval_va(kleene_iteration_index, p, var_env_to_move.clone(), *t1)?;
-                let n2 = eval_va(kleene_iteration_index, p, var_env_to_move, *t2)?;
+                let n1 = eval_va(kleene_index, p, var_env_to_move.clone(), *t1)?;
+                let n2 = eval_va(kleene_index, p, var_env_to_move, *t2)?;
                 Some(n1 * n2)
             },
             Term::Brn(t_pred, t_then, t_else) => {
-                let n_pred = eval_va(kleene_iteration_index, p, var_env_to_move.clone(), *t_pred)?;
+                let n_pred = eval_va(kleene_index, p, var_env_to_move.clone(), *t_pred)?;
                 if n_pred == 0 {
-                    let n_then = eval_va(kleene_iteration_index, p, var_env_to_move, *t_then)?;
+                    let n_then = eval_va(kleene_index, p, var_env_to_move, *t_then)?;
                     Some(n_then)
                 } else {
-                    let n_else = eval_va(kleene_iteration_index, p, var_env_to_move, *t_else)?;
+                    let n_else = eval_va(kleene_index, p, var_env_to_move, *t_else)?;
                     Some(n_else)
                 }
             },
@@ -118,7 +116,7 @@ fn eval_va(kleene_iteration_index: u64, p: &Program, var_env: VarEnv_va, term: T
 
                     let mut rho = VarEnv_va::new();
                     for (arg, var) in args.into_iter().zip(phi_i.args.clone()) {
-                        let val = eval_va(kleene_iteration_index, p, var_env_to_move.clone(), arg.clone())?;
+                        let val = eval_va(kleene_index, p, var_env_to_move.clone(), arg.clone())?;
                         rho.update(var, val);
                     }
 
