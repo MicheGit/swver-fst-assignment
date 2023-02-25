@@ -2,8 +2,8 @@ use std::collections::HashMap;
 
 use crate::parser_pc::{Term, Decl};
 
+mod call_by_value_opt;
 mod call_by_value;
-//mod call_by_value_opt;
 mod call_by_name;
 
 /**

@@ -20,7 +20,10 @@ lt(x, y) = sign(x - y) + 1
 
 undef() = undef() + 1
 
+undef1() = undef2()
+undef2() = undef1()
+
 shouldworkna() = z(undef())
 shouldnotworkva() = z(undef())
 
-main() = z(undef())
+main() = undef()
