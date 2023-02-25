@@ -15,9 +15,11 @@ impl VarEnv_va {
     fn new() -> VarEnv_va {
         VarEnv_va { memory: HashMap::new() }
     }
+    
     fn update(&mut self, arg_name: String, arg_val: i32) -> () {
         self.memory.insert(arg_name, arg_val);
     }
+
     fn lookup(&self, var: &String) -> i32 {
         match self.memory.get(var) {
             Some(n) => *n,

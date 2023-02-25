@@ -23,4 +23,4 @@ undef() = undef() + 1
 shouldworkna() = z(undef())
 shouldnotworkva() = z(undef())
 
-main() = undef() + 1
+main() = z(undef())
