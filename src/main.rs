@@ -1,17 +1,57 @@
 // mod parser;
-mod parser_pc;
+mod parser;
 mod interpreter;
 
-fn main() {
-    // TODO args
+use std::env;
+
+///
+/// Gets the file and takes care of windows' \r
+///
+fn get_input_text() -> String {
     let filename = "input.txt";
     let path = format!("assets/{}", filename);
     if let Ok(content) = std::fs::read_to_string(path) {
-        let content = content.replace("\r\n", "\n");
-        let (_, decls) = parser_pc::parse_program(&content).unwrap();
-        // println!("{}", interpreter::run_rec_program_na(decls.clone()));
-        println!("{}", interpreter::run_rec_program_va(decls));
+        content.replace("\r\n", "\n")
     } else {
         panic!("File {} not found", filename);
-    };
+    }
+}
+
+/// Run this program with
+///         cargo run [-- {options}]
+///     where options may be:
+/**
+ * cbv => call by value
+ * cbvo => an optimized version of cbv
+ * cbn => call by name
+ */
+/// If no option is given then the program runs only one time in
+///  cbvo mode
+fn main() {
+    let content = get_input_text();
+    let mut args: Vec<String> = env::args().skip(1).collect();
+    if args.len() == 0 {
+        args.push("cbvo".to_owned());
+    }
+    for arg in args { 
+        let decls = parser::parse_program(&content);
+        match arg.as_str() {
+            "cbn" => {
+                let result = interpreter::run_rec_program_na(decls);
+                println!("Call by name result => {}", result);
+            },
+            "cbv" => {
+                let result = interpreter::run_rec_program_va(decls);
+                println!("Call by value result => {}", result);
+            },
+            "cbvo" => {
+                let result = interpreter::run_rec_program_va_opt(decls);
+                println!("Call by value (optimized) result => {}", result);
+            },
+            option => {
+                println!("Option {} not recognized", option);
+            }
+        }
+    }
+    
 }

@@ -1,70 +1,35 @@
-use nom::bytes::complete::tag;
-use nom::branch::alt;
-use nom::combinator::all_consuming;
-use nom::{
-    IResult, 
-    Parser
-};
-use nom::error::{
-    ParseError, 
-    Error, 
-    ErrorKind
-};
-use nom::character::complete::{
-    alphanumeric0,
-    alpha1,
-    space0,
-    space1, newline
-};
-use nom::sequence::{
-    pair, delimited
-};
-use nom::multi::many0;
+use nom::{branch::alt, bytes::complete::tag, IResult, sequence::{delimited, pair}, character::complete::{space0, space1, alpha1, newline, multispace0}, error::{ParseError, Error, ErrorKind}, Parser, multi::{many0, many1}};
+use nom::InputTakeAtPosition;
+// Data types
 
-#[derive(Debug, PartialEq, Clone)]
+/** A rec declaration has:
+ * a function name;
+ * a list of arguments;
+ * a body.
+ */
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Decl {
     pub fn_name: String,
     pub args: Vec<String>,
-    pub term: Term
+    pub expr: Term
 }
 
-pub fn parse_program<'a>(input: &'a str) -> IResult<&'a str, Vec<Decl>> {
-    
-    let (input, decl) = declaration(input)?;
-
-    let (_, mut decls) = all_consuming(many0(|s: &'a str| -> IResult<&'a str, Decl> {
-        let (s, _) = newline(s)?;
-        declaration(s)
-    }))(input)?;
-
-    decls.insert(0, decl);
-    Ok(("", decls))
-}
-
-fn declaration<'a>(input: &'a str) -> IResult<&'a str, Decl> {
-    let (input, fn_name) = identifier(input)?;
-    let (input, _) = symbol("(")(input)?;
-    let (input, args) = many0(|s: &'a str| -> IResult<&'a str, String> {
-        let (mut s, arg) = identifier(s)?;
-        if let Ok((ia, _)) = symbol(",")(s) {
-            s = ia;
-        }
-        Ok((s, arg))
-    })(input)?;
-    let (input, _) = symbol(")")(input)?;
-    let (input, _) = symbol("=")(input)?;
-    let (input, term) = expression(input)?;
-    Ok((input, Decl{
-        fn_name,
-        args,
-        term
-    }))
-}
-
-#[derive(Debug, PartialEq, Clone)]
+/// rec's terminals are defined as follows
+/// 
+///     
+///     t ::= n       // a natural
+///         | x       // a variable
+///         | t1 + t2 // addition
+///         | t1 - t2 // difference
+///         | t1 * t2 // multiplication
+///         | if t0 then t1 else t2
+///         | fn(t0...tn)
+///         
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Term {
     Num(i32),
     Var(String),
+    // Neg(Box<Term>),
     Add(Box<Term>, Box<Term>),
     Sub(Box<Term>, Box<Term>),
     Mul(Box<Term>, Box<Term>),
@@ -72,93 +37,101 @@ pub enum Term {
     App(String, Vec<Term>)
 }
 
-fn expression(input: &str) -> IResult<&str, Term> {
-    alt((
-        branch,
-        expression_1
-    ))(input)
-}
+// Parser
 
-fn branch(input: &str) -> IResult<&str, Term> {
-    let (input, _) = keyword("if")(input)?;
-    let (input, predicate) = expression(input)?;
-    let (input, _) = keyword("then")(input)?;
-    let (input, t1) = expression(input)?;
-    let (input, _) = keyword("else")(input)?;
-    let (input, t2) = expression(input)?;
-    Ok((input, Term::Brn(Box::new(predicate), Box::new(t1), Box::new(t2)))) 
-}
-
-// così com'è la differenza non ha associatività (devi mettere le parentesi)
-// l'implementazione è left-associative e l'ho presa da un altro progetto
-// potrebbe essere forse più carino fare un'implementazione più seria ma per ora evito
-fn expression_1<'a>(input: &'a str) -> IResult<&'a str, Term> {
-    let (input, t1) = expression_2(input)?;
-    let try_add = |s: &'a str| -> IResult<&'a str, Term> {
-        let (s, _) = symbol("+")(s)?;
-        expression_1(s)
-    };
-    let try_sub = |s: &'a str| -> IResult<&'a str, Term> {
-        let (s, _) = symbol("-")(s)?;
-        expression_2(s) // TODO come mai qui è 2 e non 1?
-    };
-    if let Ok((input, t2)) = try_add(input) {
-        Ok((input, Term::Add(Box::new(t1), Box::new(t2))))
-    } else if let Ok((input, t2)) = try_sub(input) {
-        Ok((input, Term::Sub(Box::new(t1), Box::new(t2))))
-    } else {
-        Ok((input, t1))
-    }
-}
-
-fn expression_2<'a>(input: &'a str) -> IResult<&'a str, Term> {
-    let try_add = |s: &'a str|-> IResult<&'a str, Term> {
-        let (s, _) = symbol("*")(s)?;
-        let (s, t) = expression_2(s)?;
+/// Parses the program given as input into an array of declarations. 
+/// It panics if there are syntactical errors or if the parser doesn't
+/// consume all of the input.
+pub fn parse_program<'a>(input: &'a str) -> Vec<Decl> {
+    let result = many1(|s: &'a str| -> IResult<&'a str, Decl> {
+        let (mut s, t) = decl(s)?;
+        if let Ok((ia, _)) = empty_lines(s) {
+            s = ia;
+        }
         Ok((s, t))
-    };
-    let (input, t1) = atomic_expression(input)?;
-    if let Ok((input, t2)) = try_add(input) {
-        Ok((input, Term::Mul(Box::new(t1), Box::new(t2))))
-    } else {
-        Ok((input, t1))
+    })(input);
+    match result {
+        Ok((rest, program)) => {
+            if rest.is_empty() {
+                program
+            } else {
+                panic!("The parser was unable to consume all the file, the following lines were not parsed:\n{}", rest);
+            }
+        },
+        Err(err) => panic!("Unable to parse. Reason was {}", err)
     }
 }
 
-fn atomic_expression(input: &str) -> IResult<&str, Term> {
-    let (input, t) = alt((
-        function_call,
-        variable,
-        number,
-        parenthesis_expression
-    ))(input)?;
-    Ok((input, t))
+fn empty_lines<'a>(input: &str) -> IResult<&str, ()> {
+    let (input, _) = newline(input)?;
+    let (input, _) = multispace0(input)?;
+    Ok((input, ()))
 }
 
-fn function_call<'a>(input: &'a str) -> IResult<&'a str, Term> {
+fn decl<'a>(input: &'a str) -> IResult<&'a str, Decl> {
     let (input, fn_name) = identifier(input)?;
-    let (input, _) = symbol("(")(input)?;
-    let (input, args) = many0(|s: &'a str| -> IResult<&'a str, Term> {
-        let (mut s, t) = expression(s)?;
+    let parse_args = many0(|s: &'a str| -> IResult<&'a str, String> {
+        let (mut s, t) = identifier(s)?;
         if let Ok((ia, _)) = symbol(",")(s) {
             s = ia;
         }
         Ok((s, t))
-    })(input)?;
-    let (input, _) = symbol(")")(input)?;
-    Ok((input, Term::App(fn_name, args)))
+    });
+    let (input, args) = delimited(symbol("("), parse_args, symbol(")"))(input)?;
+    let (input, _) = symbol("=")(input)?;
+    let (input, expr) = expr(input)?;
+    Ok((input, Decl {
+        fn_name,
+        args,
+        expr
+    }))
 }
 
-fn parenthesis_expression(input: &str) -> IResult<&str, Term> {
-    let (input, _) = symbol("(")(input)?;
-    let (input, t) = expression(input)?;
-    let (input, _) = symbol(")")(input)?;
-    Ok((input, t))
+/**
+ * Il parser delle espressioni implementa l'algoritmo precedence climbing
+ */
+
+pub fn expr(input: &str) -> IResult<&str, Term> {
+    expr_helper(0, input)
 }
 
-fn variable(input: &str) -> IResult<&str, Term> {
-    let (input, x) = token(identifier)(input)?;
-    Ok((input, Term::Var(x)))
+fn expr_helper(priority: u8, input: &str) -> IResult<&str, Term> {
+    let (mut input,  mut t1) = leaf(input)?;
+    while let Ok((right_side, (op_cons, op_prio))) = operator(input) {
+        if op_prio < priority {
+            break;
+        }
+        // in precedence climbing si aggiunge 1 alla priorità solo se l'operatore matchato è left recursive
+        // in questo caso sono tutti left recursive quindi aggiungo +1 a prescindere
+        let (input2, t2) = expr_helper(op_prio + 1, right_side)?;
+        t1 = op_cons(Box::new(t1.clone()), Box::new(t2));
+        input = input2;
+    }
+    Ok((input, t1))
+}
+
+fn operator(input: &str) -> IResult<&str, (fn(Box<Term>, Box<Term>) -> Term, u8)> {
+    let (input, op) = alt((
+        symbol("+"),
+        symbol("-"),
+        symbol("*")
+    ))(input)?;
+    match op {
+        "+" => Ok((input, (Term::Add, 1))),
+        "-" => Ok((input, (Term::Sub, 1))),
+        "*" => Ok((input, (Term::Mul, 2))),
+        _   => panic!("The alternative on operators has matched something that was not an operator. This shouldn't happen.")
+    }
+}
+
+fn leaf(input: &str) -> IResult<&str, Term> {
+    alt((
+        number,
+        parenthesis,
+        branch,
+        application,
+        variable
+    ))(input)
 }
 
 fn number(input: &str) -> IResult<&str, Term> {
@@ -166,9 +139,28 @@ fn number(input: &str) -> IResult<&str, Term> {
     Ok((input, Term::Num(n)))
 }
 
+fn parenthesis(input: &str) -> IResult<&str, Term> {
+    delimited(symbol("("), expr, symbol(")"))(input)
+}
+
+fn branch(input: &str) -> IResult<&str, Term> {
+    let (input, _) = keyword("if")(input)?;
+    let (input, pred) = expr(input)?;
+    let (input, _) = keyword("then")(input)?;
+    let (input, t1) = expr(input)?;
+    let (input, _) = keyword("else")(input)?;
+    let (input, t2) = expr(input)?;
+    Ok((input, Term::Brn(Box::new(pred), Box::new(t1), Box::new(t2)))) 
+}
+
+fn variable(input: &str) -> IResult<&str, Term> {
+    let (input, x) = token(identifier)(input)?;
+    Ok((input, Term::Var(x)))
+}
+
 fn identifier(input: &str) -> IResult<&str, String> {
-    let (input, (fst, rest)) = pair(alpha1, alphanumeric0)(input)?;
-    let x = fst.to_owned() + rest;
+    let (input, (fst, rest)) = pair(alpha1, alphanumeric_with_underscore0)(input)?;
+    let x = fst.to_owned() + &rest;
     let keywords = vec!["if", "then", "else"];
     if keywords.contains(&x.as_str()) {
         Err(nom::Err::Failure(Error {
@@ -180,6 +172,27 @@ fn identifier(input: &str) -> IResult<&str, String> {
     }
 }
 
+fn alphanumeric_with_underscore0(input: &str) -> IResult<&str, &str> {
+    input.split_at_position_complete(|item| !(item.is_alphanumeric() || item == '_'))
+}
+
+fn application(input: &str) -> IResult<&str, Term> {
+    let (input, name) = token(identifier)(input)?;
+    let (input, list) = delimited(symbol("("), list_of_args, symbol(")"))(input)?;
+    Ok((input, Term::App(name, list)))
+}
+
+fn list_of_args<'a>(input: &'a str) -> IResult<&str, Vec<Term>> {
+    many0(|s: &'a str| -> IResult<&'a str, Term> {
+        let (mut s, t) = expr(s)?;
+        if let Ok((ia, _)) = symbol(",")(s) {
+            s = ia;
+        }
+        Ok((s, t))
+    })(input)
+}
+
+// Parsing utilities
 fn keyword<'a>(sym: &'a str) -> impl FnMut(&'a str) -> IResult<&'a str, &'a str> {
     delimited(space0, tag(sym), space1)
 }
@@ -201,51 +214,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_declaration() {
-        let test1 = Decl {
-            fn_name: "fib".to_owned(),
-            args: vec!["x".to_owned()],
-            term: Term::Brn(
-                Box::new(Term::Var("x".to_owned())),
-                Box::new(Term::Num(1)),
-                Box::new(Term::Brn(
-                    Box::new(Term::Sub(
-                        Box::new(Term::Var("x".to_owned())),
-                        Box::new(Term::Num(1))
-                    )),
-                    Box::new(Term::Num(1)),
-                    Box::new(Term::Add(
-                        Box::new(Term::App(
-                            "fib".to_owned(), 
-                            vec![Term::Sub(
-                                Box::new(Term::Var("x".to_owned())),
-                                Box::new(Term::Num(1))
-                            )]
-                        )),
-                        Box::new(Term::App(
-                            "fib".to_owned(), 
-                            vec![Term::Sub(
-                                Box::new(Term::Var("x".to_owned())),
-                                Box::new(Term::Num(2))
-                            )]
-                        ))
-                    ))
-                ))
-            )
-        };
-        let expr1 = "fib(x) = if x then 1 else ( if x-1 then 1 else (fib(x-1) + fib(x-2)))";
-        assert_eq!(declaration(expr1), Ok(("", test1)));
-    }
-
-    #[test]
-    fn test_ident() {
-        assert_eq!(identifier("abc213"), Ok(("", "abc213".to_owned())));
-        assert!(identifier("3abc213").is_err());
-        assert_eq!(identifier("a21NS3S"), Ok(("", "a21NS3S".to_owned())));
-        assert_eq!(identifier("a"), Ok(("", "a".to_owned())));
-    }
-
-    #[test]
     fn test_token() {
         assert_eq!(number("  \t  -5 \t\t\t"), Ok(("", Term::Num(-5))));
         assert_eq!(variable("  \t  x \t\t\t;"), Ok((";", Term::Var("x".to_owned()))));
@@ -262,155 +230,144 @@ mod tests {
     }
 
     #[test]
+    fn test_identifier() {
+        assert_eq!(identifier("abc213"), Ok(("", "abc213".to_owned())));
+        assert!(identifier("3abc213").is_err());
+        assert_eq!(identifier("a21NS3S"), Ok(("", "a21NS3S".to_owned())));
+        assert_eq!(identifier("a"), Ok(("", "a".to_owned())));
+    }
+
+    #[test]
+    fn test_number() {
+        assert_eq!(leaf("2)"), Ok((")", Term::Num(2))));
+        assert_eq!(leaf("-15"), Ok(("", Term::Num(-15))));
+        assert_eq!(leaf("6 + 65"), Ok(("+ 65", Term::Num(6))));
+    }
+
+    #[test]
+    fn test_variable() {
+        assert_eq!(leaf("hello world"), Ok(("world", Term::Var("hello".to_owned()))));
+    }
+
+    #[test]
+    fn test_parenthesis() {
+        assert_eq!(leaf("(7)"), Ok(("", Term::Num(7))));
+        assert_eq!(leaf("(-15)"), Ok(("", Term::Num(-15))));
+    }
+
+    #[test]
+    fn test_application() {
+        assert_eq!(leaf("light()"), Ok(("", Term::App("light".to_owned(), vec![]))));
+        assert_eq!(leaf("double(5)"), Ok(("", Term::App("double".to_owned(), vec![Term::Num(5)]))));
+        assert_eq!(leaf("fib(6, 3)"), Ok(("", Term::App("fib".to_owned(), vec![Term::Num(6), Term::Num(3)]))));
+    }
+
+    #[test]
     fn test_branch() {
-        let test1 = Term::Brn(
+        assert_eq!(leaf("if x then 0 else 1"), Ok(("", Term::Brn(
             Box::new(Term::Var("x".to_owned())),
-            Box::new(Term::Num(1)),
-            Box::new(Term::Var("y".to_owned()))
-        );
-        assert_eq!(branch("if x then 1 else y"), Ok(("", test1)));
-        assert!(branch("1+2").is_err());
-        assert!(branch("if 1 then2 else 3").is_err());
-    }
-
-    #[test]
-    fn test_parenthesis_expression() {
-        let test1 = Term::Num(1);
-        assert_eq!(parenthesis_expression("(1)"), Ok(("", test1)));
-        assert!(parenthesis_expression("()").is_err());
-    }
-
-    #[test]
-    fn test_expression_2() {
-        let test1 = Term::Mul(Box::new(Term::Var("x".to_owned())), Box::new(Term::Num(2)));
-        assert_eq!(expression_2("x * 2"), Ok(("", test1)));
-        let test2 = Term::Mul(Box::new(Term::Num(-5)), Box::new(Term::Num(-23)));
-        assert_eq!(expression_2("-5*-23y"), Ok(("y", test2)));
-    }
-
-    #[test]
-    fn test_expression_1() {
-        let test1 = Term::Add(Box::new(Term::Var("x".to_owned())), Box::new(Term::Num(1)));
-        assert_eq!(expression_1("x +1"), Ok(("", test1)));
-        let test2 = Term::Sub(Box::new(Term::Num(-5)), Box::new(Term::Num(-23)));
-        assert_eq!(expression_1("-5--23y"), Ok(("y", test2)));
-        let test2 = Term::Sub(Box::new(Term::Var("x".to_owned())), Box::new(Term::Num(23)));
-        assert_eq!(expression_1("x-23"), Ok(("", test2)));
-    }
-
-    #[test]
-    fn test_expression_1_nested() {
-        let test2 =
-        Term::Sub(
-            Box::new(Term::Num(3)),
-            Box::new(Term::Add(
-                Box::new(Term::Mul(
-                    Box::new(Term::Num(4)),
-                    Box::new(Term::Num(2))
-                )),
-                Box::new(Term::Num(3))
-            ))
-        );
-        let expr2 = "3-(4 * 2+3)";
-        assert_eq!(expression_1(expr2), Ok(("", test2)));
-
-        let expr2 = "1+1+1+1+1+1+1+1+1+1";
-        let test2 = Term::Add(
-            Box::new(Term::Num(1)),
-            Box::new(Term::Add(
-                Box::new(Term::Num(1)),
-                Box::new(Term::Add(
+            Box::new(Term::Num(0)),
+            Box::new(Term::Num(1))))));
+            assert_eq!(leaf("if x then 0 else if y then 1 else 2"), Ok(("", Term::Brn(
+                Box::new(Term::Var("x".to_owned())),
+                Box::new(Term::Num(0)),
+                Box::new(Term::Brn(
+                    Box::new(Term::Var("y".to_owned())),
                     Box::new(Term::Num(1)),
-                    Box::new(Term::Add(
-                        Box::new(Term::Num(1)),
-                        Box::new(Term::Add(
-                            Box::new(Term::Num(1)),
-                            Box::new(Term::Add(
-                                Box::new(Term::Num(1)),
-                                Box::new(Term::Add(
-                                    Box::new(Term::Num(1)),
-                                    Box::new(Term::Add(
-                                        Box::new(Term::Num(1)),
-                                        Box::new(Term::Add(
-                                            Box::new(Term::Num(1)),
-                                            Box::new(Term::Num(1))
-                                        ))
-                                    ))
-                                ))
-                            ))
-                        ))
-                    ))
-                ))
-            ))
-        );
-        assert_eq!(expression_1(expr2), Ok(("", test2)));
+                    Box::new(Term::Num(2))))))));
     }
 
     #[test]
-    fn test_function_call() {
-        let test1 = Term::App("sideeff".to_owned(), vec![]);
-        let expr1 = "sideeff()";
-        assert_eq!(function_call(expr1), Ok(("", test1)));
-
-        let test1 = Term::App("fib".to_owned(), vec![Term::Num(10)]);
-        let expr1 = "fib(10)";
-        assert_eq!(function_call(expr1), Ok(("", test1)));
-
-        let test1 = Term::App("ackermann".to_owned(), vec![Term::Num(4), Term::Num(5)]);
-        let expr1 = "ackermann(4, 5)";
-        assert_eq!(function_call(expr1), Ok(("", test1)));
-
-        let test1 = Term::App("fn".to_owned(), vec![Term::Num(4), Term::Num(5), Term::Var("x".to_owned()), Term::Add(
-            Box::new(Term::Num(1)), 
-            Box::new(Term::Num(2))
-        )]);
-        let expr1 = "fn(4, 5  ,\tx,    1+   2)";
-        assert_eq!(function_call(expr1), Ok(("", test1)));
-
-        assert!(function_call("fn(x,").is_err())
-    }
-
-    #[test]
-    fn test_expressions() {
-        let test1 = Term::Mul(
-            Box::new(Term::Var("x".to_owned())), 
+    fn test_expr_5() {
+        assert_eq!(expr("2 * 3"), Ok(("", Term::Mul(
+            Box::new(Term::Num(2)),
+            Box::new(Term::Num(3)))
+        )));
+        assert_eq!(expr("-2 * 3"), Ok(("", Term::Mul(
+            Box::new(Term::Num(-2)),
+            Box::new(Term::Num(3)))
+        )));
+        assert_eq!(expr("2 * -3"), Ok(("", Term::Mul(
+            Box::new(Term::Num(2)),
+            Box::new(Term::Num(-3))
+        ))));
+        assert_eq!(leaf("(2 * 3)"), Ok(("", Term::Mul(
+            Box::new(Term::Num(2)),
             Box::new(Term::Num(3))
-        );
-        let expr1 = "x * 3";
-        assert_eq!(expression(expr1), Ok(("", test1.clone())));
-
-        let test2 = Term::Brn(
-            Box::new(Term::Var("predicate".to_owned())), 
-            Box::new(Term::Num(1)), 
-            Box::new(test1.clone())
-        );
-        let expr2 = "if predicate then 1 else x*3";
-        assert_eq!(expression(expr2), Ok(("", test2.clone())));
-        
-        let test3 = Term::Add(
-            Box::new(Term::Num(1)), 
-            Box::new(test2.clone())
-        );
-        let expr3 = "1 + (if predicate then 1 else x*3)";
-        assert_eq!(expression(expr3), Ok(("", test3.clone())));
-
-        let expr4 = "1 + (if predicate then1 else x*3)";
-        assert_eq!(expression(expr4), Ok(("+ (if predicate then1 else x*3)", Term::Num(1))));
-
-        let test5 = Term::Brn(
-            Box::new(Term::Var("x".to_owned())),
-            Box::new(Term::Num(1)),
+        ))));
+        assert_eq!(expr("2 * 5 * k * w"), Ok(("", Term::Mul(
             Box::new(Term::Mul(
-                Box::new(Term::App(
-                    "f".to_owned(), 
-                    vec![Term::Sub(
-                        Box::new(Term::Var("x".to_owned())),
-                        Box::new(Term::Num(1))
-                    )])),
-                Box::new(Term::Var("x".to_owned()))
-            ))
-        );
-        let expr5 = "if x then 1 else (f(x-1) * x)";
-        assert_eq!(expression(expr5), Ok(("", test5)));
+                Box::new(Term::Mul(
+                    Box::new(Term::Num(2)), 
+                    Box::new(Term::Num(5))
+                )), 
+                Box::new(Term::Var("k".to_owned()))
+            )),
+            Box::new(Term::Var("w".to_owned()))
+        ))));
+    }
+
+    #[test]
+    fn test_expr_4() {
+        assert_eq!(expr("2 + 3"), Ok(("", Term::Add(
+            Box::new(Term::Num(2)),
+            Box::new(Term::Num(3)))
+        )));
+        assert_eq!(expr("-2 - 3"), Ok(("", Term::Sub(
+            Box::new(Term::Num(-2)),
+            Box::new(Term::Num(3)))
+        )));
+        assert_eq!(expr("2 + -3"), Ok(("", Term::Add(
+            Box::new(Term::Num(2)),
+            Box::new(Term::Num(-3))
+        ))));
+        assert_eq!(leaf("(5 + s)"), Ok(("", Term::Add(
+            Box::new(Term::Num(5)),
+            Box::new(Term::Var("s".to_owned()))
+        ))));
+        assert_eq!(expr("x + y * 2"), Ok(("", Term::Add(
+            Box::new(Term::Var("x".to_owned())),
+            Box::new(Term::Mul(
+                Box::new(Term::Var("y".to_owned())),
+                Box::new(Term::Num(2))))
+        ))));
+        assert_eq!(expr("x + y * 2 * 5 * k * w"), Ok(("", Term::Add(Box::new(Term::Var("x".to_owned())), 
+        Box::new(Term::Mul(
+            Box::new(Term::Mul(
+                Box::new(Term::Mul(
+                    Box::new(Term::Mul(
+                        Box::new(Term::Var("y".to_owned())), 
+                        Box::new(Term::Num(2))
+                    )), 
+                    Box::new(Term::Num(5))
+                )), 
+                Box::new(Term::Var("k".to_owned()))
+            )), 
+            Box::new(Term::Var("w".to_owned()))
+        ))))));
+    }
+
+    #[test]
+    fn test_decl() {
+        let str = "fact(n) = if n then 1 else fact(n-1) * n";
+        let expected = Decl {
+            fn_name: "fact".to_owned(),
+            args: vec!["n".to_owned()],
+            expr: Term::Brn(
+                Box::new(Term::Var("n".to_owned())), 
+                Box::new(Term::Num(1)), 
+                Box::new(Term::Mul(
+                    Box::new(Term::App(
+                        "fact".to_owned(), 
+                        vec![Term::Sub(
+                            Box::new(Term::Var("n".to_owned())),
+                            Box::new(Term::Num(1))
+                        )]
+                    )),
+                    Box::new(Term::Var("n".to_owned()))
+                )))
+        };
+        assert_eq!(decl(str), Ok(("", expected.clone())));
+        assert_eq!(decl("fact(n) = if n then 1 else fact(n-1) * n\nfact(n) = if n then 1 else fact(n-1) * n"), Ok(("\nfact(n) = if n then 1 else fact(n-1) * n", expected)));
     }
 }

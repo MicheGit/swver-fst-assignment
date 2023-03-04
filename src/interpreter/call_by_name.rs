@@ -5,6 +5,34 @@ use super::Program;
 
 use crate::interpreter::Term;
 
+/// 
+/// Finds the fix point of the functional induced by the program p, 
+///  the least one that has the function main defined.
+/// 
+/// In other words, it unleashes man made horrors beyond comprehension.
+/// 
+pub fn fix_point_iteration_na(p: &Program, fn_name: String, args: Vec<i32>) -> i32 {
+    let mut delta: FnEnv = delta_0_na(p);
+    loop {
+        if let Some(phi_i) = delta.get(&fn_name) {
+            let mut lazy_vals = vec![];
+            for arg in args.clone() {
+                let lazy_val = LazyI32::new(Rc::new(move || {
+                    Some(arg)
+                }));
+                lazy_vals.push(lazy_val);
+            }
+            if let Some(n) = phi_i(lazy_vals) {
+                return n;
+            } else {
+                delta = functional_na(p, delta);
+            }
+        } else {
+            panic!("The function {} is not defined.", &fn_name);
+        }
+    }
+}
+
 #[derive(Clone)]
 struct LazyI32 {
     function: Rc<dyn Fn() -> Option<i32>>,
@@ -36,16 +64,18 @@ impl Debug for LazyI32 {
     }
 }
 
-type FnEnv_na = HashMap<String, Rc<dyn Fn(Vec<LazyI32>) -> Option<i32>>>;
+// FnEnv_na
+type FnEnv = HashMap<String, Rc<dyn Fn(Vec<LazyI32>) -> Option<i32>>>;
 
+// VarEnv_na
 #[derive(Debug, Clone)]
-struct VarEnv_na {
+struct VarEnv {
     memory: HashMap<String, LazyI32>
 }
 
-impl VarEnv_na {
-    pub fn new() -> VarEnv_na {
-        VarEnv_na { memory: HashMap::new() }
+impl VarEnv {
+    pub fn new() -> VarEnv {
+        VarEnv { memory: HashMap::new() }
     }
     fn update(&mut self, arg_name: String, arg_val: LazyI32) -> () {
         self.memory.insert(arg_name, arg_val);
@@ -58,40 +88,8 @@ impl VarEnv_na {
     }
 }
 
-/**
- * 
- * TODO optimize
- * 
- * Finds the fix point of the functional induced by the program p, 
- *  the least one that has the function main defined.
- * 
- * In other words, it unleashes man made horrors beyond comprehension.
- * 
- */
-pub fn fix_point_iteration_na(p: &Program, fn_name: String, args: Vec<i32>) -> i32 {
-    let mut delta: FnEnv_na = delta_0_na(p);
-    loop {
-        if let Some(phi_i) = delta.get(&fn_name) {
-            let mut lazy_vals = vec![];
-            for arg in args.clone() {
-                let lazy_val = LazyI32::new(Rc::new(move || {
-                    Some(arg)
-                }));
-                lazy_vals.push(lazy_val);
-            }
-            if let Some(n) = phi_i(lazy_vals) {
-                return n;
-            } else {
-                delta = functional_na(p, delta);
-            }
-        } else {
-            panic!("The function {} is not defined.", &fn_name);
-        }
-    }
-}
-
-fn delta_0_na(p: &Program) -> FnEnv_na {
-    let mut phi: FnEnv_na = HashMap::new();
+fn delta_0_na(p: &Program) -> FnEnv {
+    let mut phi: FnEnv = HashMap::new();
     for (fn_name, _) in p {
         let bottom = Rc::new(|_| None);
         phi.insert(fn_name.clone(), bottom);
@@ -100,15 +98,15 @@ fn delta_0_na(p: &Program) -> FnEnv_na {
 }
 
 
-fn functional_na(p: &Program, phi: FnEnv_na) -> FnEnv_na {
-    let mut ret: FnEnv_na = HashMap::new();
+fn functional_na(p: &Program, phi: FnEnv) -> FnEnv {
+    let mut ret: FnEnv = HashMap::new();
     for (fn_name, decl) in p {
         let phi_to_move = phi.clone();
         let args_to_move = decl.args.clone();
         let expr_to_move = decl.expr.clone();
 
         let lambda = Rc::new(move |vs: Vec<LazyI32>| {
-            let mut rho = VarEnv_na::new();
+            let mut rho = VarEnv::new();
             for (val, var) in vs.into_iter().zip(args_to_move.clone()) {
                 rho.update(var, val);
             }
@@ -120,7 +118,7 @@ fn functional_na(p: &Program, phi: FnEnv_na) -> FnEnv_na {
 }
 
 
-fn eval_na(fn_env: &FnEnv_na, var_env: &VarEnv_na, term: Term) -> Option<i32> {
+fn eval_na(fn_env: &FnEnv, var_env: &VarEnv, term: Term) -> Option<i32> {
     match term {
         Term::Num(n) => Some(n),
         Term::Var(x) => var_env.lookup(&x).deref(),

@@ -4,7 +4,29 @@ use super::Program;
 
 use crate::interpreter::Term;
 
-type FnEnv_va = HashMap<String, Rc<dyn Fn(Vec<i32>) -> Option<i32>>>;
+/// 
+/// Finds the fix point of the functional induced by the program p, 
+///  the least one that has the function main defined.
+/// 
+/// In other words, it unleashes man made horrors beyond comprehension.
+/// 
+pub fn fix_point_iteration_va(p: &Program, fn_name: String, args: Vec<i32>) -> i32 {
+    let mut delta: FnEnv = delta_0_va(p);
+    loop {
+        if let Some(phi_i) = delta.get(&fn_name) {
+            if let Some(n) = phi_i(args.clone()) {
+                return n;
+            } else {
+                delta = functional_va(p, delta);
+            }
+        } else {
+            panic!("The function {} is not defined.", &fn_name);
+        }
+    }
+}
+
+// FnEnv_va
+type FnEnv = HashMap<String, Rc<dyn Fn(Vec<i32>) -> Option<i32>>>;
 
 struct PrintOnDrop(&'static str);
 
@@ -14,14 +36,15 @@ impl Drop for PrintOnDrop {
     }
 }
 
+// VarEnv_va
 #[derive(Debug, Clone)]
-struct VarEnv_va {
+struct VarEnv {
     memory: HashMap<String, i32>
 }
 
-impl VarEnv_va {
-    fn new() -> VarEnv_va {
-        VarEnv_va { memory: HashMap::new() }
+impl VarEnv {
+    fn new() -> VarEnv {
+        VarEnv { memory: HashMap::new() }
     }
     
     fn update(&mut self, arg_name: String, arg_val: i32) -> () {
@@ -36,33 +59,8 @@ impl VarEnv_va {
     }
 }
 
-/**
- * 
- * TODO optimize
- * 
- * Finds the fix point of the functional induced by the program p, 
- *  the least one that has the function main defined.
- * 
- * In other words, it unleashes man made horrors beyond comprehension.
- * 
- */
-pub fn fix_point_iteration_va(p: &Program, fn_name: String, args: Vec<i32>) -> i32 {
-    let mut delta: FnEnv_va = delta_0_va(p);
-    loop {
-        if let Some(phi_i) = delta.get(&fn_name) {
-            if let Some(n) = phi_i(args.clone()) {
-                return n;
-            } else {
-                delta = functional_va(p, delta);
-            }
-        } else {
-            panic!("The function {} is not defined.", &fn_name);
-        }
-    }
-}
-
-fn delta_0_va(p: &Program) -> FnEnv_va {
-    let mut phi: FnEnv_va = HashMap::new();
+fn delta_0_va(p: &Program) -> FnEnv {
+    let mut phi: FnEnv = HashMap::new();
     for (fn_name, _) in p {
         let bottom = Rc::new(|_| None);
         phi.insert(fn_name.clone(), bottom);
@@ -70,8 +68,8 @@ fn delta_0_va(p: &Program) -> FnEnv_va {
     phi
 }
 
-fn functional_va(p: &Program, phi: FnEnv_va) -> FnEnv_va {
-    let mut ret: FnEnv_va = HashMap::new();
+fn functional_va(p: &Program, phi: FnEnv) -> FnEnv {
+    let mut ret: FnEnv = HashMap::new();
     for (fn_name, decl) in p {
         let phi_to_move = phi.clone();
         let args_to_move = decl.args.clone();
@@ -80,7 +78,7 @@ fn functional_va(p: &Program, phi: FnEnv_va) -> FnEnv_va {
         let phi_i = Rc::new(move |vs: Vec<i32>| {
             // println!("Entering phi_i");
             // let _overwritten = PrintOnDrop("Closed phi_i stack");
-            let mut rho = VarEnv_va::new();
+            let mut rho = VarEnv::new();
             for (val, var) in vs.into_iter().zip(args_to_move.clone()) {
                 rho.update(var, val);
             }
@@ -91,7 +89,7 @@ fn functional_va(p: &Program, phi: FnEnv_va) -> FnEnv_va {
     ret
 }
 
-fn eval_va(fn_env: FnEnv_va, var_env: VarEnv_va, term: Term) -> Option<i32> {
+fn eval_va(fn_env: FnEnv, var_env: VarEnv, term: Term) -> Option<i32> {
     match term {
         Term::Num(n) => Some(n),
         Term::Var(x) => Some(var_env.lookup(&x)),
@@ -141,20 +139,20 @@ fn eval_va(fn_env: FnEnv_va, var_env: VarEnv_va, term: Term) -> Option<i32> {
 
 #[cfg(test)]
 mod tests {
-    use crate::parser_pc::{expr, parse_program};
+    use crate::parser::{expr, parse_program};
 
     use super::*;
 
     #[test]
     fn eval_va_num() {
-        let var_env = VarEnv_va::new();
+        let var_env = VarEnv::new();
         let fn_env = HashMap::new();
         assert_eq!(eval_va(fn_env, var_env, Term::Num(5)), Some(5));
     }
 
     #[test]
     fn eval_va_var() {
-        let mut var_env = VarEnv_va::new();
+        let mut var_env = VarEnv::new();
         var_env.update("x".to_owned(), 5);
         var_env.update("y".to_owned(), 7);
         
@@ -165,7 +163,7 @@ mod tests {
 
     #[test]
     fn eval_va_add() {
-        let mut var_env = VarEnv_va::new();
+        let mut var_env = VarEnv::new();
         var_env.update("x".to_owned(), 5);
         var_env.update("y".to_owned(), 7);
         
@@ -180,7 +178,7 @@ mod tests {
     #[test]
     fn eval_va_sub() {
         
-        let mut var_env = VarEnv_va::new();
+        let mut var_env = VarEnv::new();
         var_env.update("x".to_owned(), 5);
         var_env.update("y".to_owned(), 7);
         
@@ -195,7 +193,7 @@ mod tests {
     #[test]
     fn eval_va_mul() {
         
-        let mut var_env = VarEnv_va::new();
+        let mut var_env = VarEnv::new();
         var_env.update("x".to_owned(), 5);
         var_env.update("y".to_owned(), 7);
         
@@ -210,7 +208,7 @@ mod tests {
     #[test]
     fn eval_va_brn() {
         
-        let mut var_env = VarEnv_va::new();
+        let mut var_env = VarEnv::new();
         var_env.update("x".to_owned(), 5);
         var_env.update("y".to_owned(), 7);
         var_env.update("z".to_owned(), 5);
@@ -231,11 +229,8 @@ mod tests {
 
     #[test]
     fn eval_va_app() {
-        if let Ok((_, p)) = parse_program("fact(x) = if x then 1 else fact(x-1) * x") {
-            let program = super::super::rec_program_from_decls(p);
-            assert_eq!(fix_point_iteration_va(&program, "fact".to_owned(), vec![5]), 120);
-        } else {
-            assert!(false);
-        }
+        let p = parse_program("fact(x) = if x then 1 else fact(x-1) * x");
+        let program = super::super::rec_program_from_decls(p);
+        assert_eq!(fix_point_iteration_va(&program, "fact".to_owned(), vec![5]), 120);
     }
 }
