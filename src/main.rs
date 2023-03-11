@@ -26,7 +26,9 @@ fn get_input_text() -> String {
  * cbn => call by name
  */
 /// If no option is given then the program runs only one time in
-///  cbvo mode
+///  cbvo mode. Example: run in call by name mode
+/// 
+///     cargo run -- cbn
 fn main() {
     let content = get_input_text();
     let mut args: Vec<String> = env::args().skip(1).collect();
