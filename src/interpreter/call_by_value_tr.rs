@@ -1,5 +1,7 @@
 use std::collections::{VecDeque, HashMap};
 
+use super::Program;
+
 use crate::interpreter::Term;
 
 #[derive(Debug, Clone)]
@@ -30,7 +32,7 @@ enum StackOp {
     Sub,
     Mul,
     Brn,
-    App
+    App(String)
 }
 
 #[derive(PartialEq, Eq)]
@@ -66,10 +68,9 @@ impl StackNode {
         StackNode::new(vec![t_then, t_else], StackOp::Brn)
     }
 
-    // fn app(to_do: Vec<Term>) -> StackNode {
-    //     // TODO 
-    //     StackNode.new(to_do, StackOp::App(to_do.len()))
-    // }
+    fn app(fn_name: String, args: Vec<Term>) -> StackNode {
+        StackNode::new(args, StackOp::App(fn_name))
+    }
 
     // instance methods
 
@@ -79,13 +80,13 @@ impl StackNode {
 
 }
 
-fn eval_va(var_env: VarEnv, term: Term) -> i32 {
-    eval_va_aux(var_env, term, vec![].into())
+fn eval_va(program: Program, var_env: VarEnv, term: Term) -> i32 {
+    eval_va_aux(program, var_env, term, vec![].into())
 }
 
 /// 
 /// evaluates a term and appends the result in the head node of the stack
-fn eval_va_aux(var_env: VarEnv, term: Term, mut stack: VecDeque<StackNode>) -> i32 {
+fn eval_va_aux(program: Program, var_env: VarEnv, term: Term, mut stack: VecDeque<StackNode>) -> i32 {
 
     let mut last_computed_val: i32;
 
@@ -99,25 +100,37 @@ fn eval_va_aux(var_env: VarEnv, term: Term, mut stack: VecDeque<StackNode>) -> i
         Term::Add(t1, t2) => {
             let node = StackNode::add(*t2);
             stack.push_front(node);
-            return eval_va_aux(var_env, *t1, stack);
+            return eval_va_aux(program, var_env, *t1, stack);
         },
         Term::Sub(t1, t2) => {
             let node = StackNode::sub(*t2);
             stack.push_front(node);
-            return eval_va_aux(var_env, *t1, stack);
+            return eval_va_aux(program, var_env, *t1, stack);
         },
         Term::Mul(t1, t2) => {
             let node = StackNode::mul(*t2);
             stack.push_front(node);
-            return eval_va_aux(var_env, *t1, stack);
+            return eval_va_aux(program, var_env, *t1, stack);
         },
         Term::Brn(t_pred, t_then, t_else) => {
             let node = StackNode::brn(*t_then, *t_else);
             stack.push_front(node);
-            return eval_va_aux(var_env, *t_pred, stack);
+            return eval_va_aux(program, var_env, *t_pred, stack);
         },
         Term::App(fn_name, args) => {
-            return 0;
+            if let [head, tail @ ..] = args.as_slice() {
+                let node = StackNode::app(fn_name, Vec::from(tail));
+                stack.push_front(node);
+                return eval_va_aux(program, var_env, head.clone(), stack);
+            } else {
+                if let Some(decl) = program.get(&fn_name) {
+                    let expr = decl.expr.clone();
+                    let rho = VarEnv::new();
+                    last_computed_val = eval_va_aux(program.clone(), rho, expr, vec![].into());
+                } else {
+                    panic!("The function {} is not defined.", fn_name);
+                }
+            }
         }
     };
 
@@ -134,9 +147,9 @@ fn eval_va_aux(var_env: VarEnv, term: Term, mut stack: VecDeque<StackNode>) -> i
                 // we can cut the branch node and substitute it with the child
                 // stack.pop_front();
                 if *last_node.done.get(0).unwrap() == 0 {
-                    return eval_va_aux(var_env, last_node.to_do.get(0).unwrap().clone(), stack);
+                    return eval_va_aux(program, var_env, last_node.to_do.get(0).unwrap().clone(), stack);
                 } else {
-                    return eval_va_aux(var_env, last_node.to_do.get(1).unwrap().clone(), stack);
+                    return eval_va_aux(program, var_env, last_node.to_do.get(1).unwrap().clone(), stack);
                 } 
             }
             // .. otherwise we need to compute each of the children ...
@@ -145,16 +158,35 @@ fn eval_va_aux(var_env: VarEnv, term: Term, mut stack: VecDeque<StackNode>) -> i
                 // if there are some terms, we need to compute them
                 // the parent stays 
                 stack.push_front(last_node);
-                return eval_va_aux(var_env, next_term, stack);
+                return eval_va_aux(program, var_env, next_term, stack);
 
             } else {
                 
-                let v = match last_node.op {
-                    StackOp::Add => last_node.done.get(1).unwrap() + last_node.done.get(0).unwrap(),
-                    StackOp::Sub => last_node.done.get(1).unwrap() - last_node.done.get(0).unwrap(),
-                    StackOp::Mul => last_node.done.get(1).unwrap() * last_node.done.get(0).unwrap(),
+                let v: i32;
+                match last_node.op {
+                    StackOp::Add => {
+                        v = last_node.done.get(1).unwrap() + last_node.done.get(0).unwrap();
+                    },
+                    StackOp::Sub => {
+                        v = last_node.done.get(1).unwrap() - last_node.done.get(0).unwrap();
+                    },
+                    StackOp::Mul => {
+                        v = last_node.done.get(1).unwrap() * last_node.done.get(0).unwrap();
+                    },
                     StackOp::Brn => panic!("There should not be any Brn in evaluation"),
-                    StackOp::App => panic!("Not implemented")
+                    StackOp::App(fn_name) => {
+                        if let Some(decl) = program.get(&fn_name) {
+                            let args = decl.args.clone();
+                            let expr = decl.expr.clone();
+                            let mut rho = VarEnv::new();
+                            for (val, var) in last_node.done.into_iter().zip(args.clone()) {
+                                rho.update(var, val);
+                            }
+                            v = eval_va_aux(program.clone(), rho, expr, vec![].into());
+                        } else {
+                            panic!("The function {} is not defined.", fn_name);
+                        }
+                    }
                     
                 };
                 // stack.pop_front();
@@ -182,8 +214,9 @@ mod tests {
 
     #[test]
     fn eval_va_no_app_no_var() {
+        let program = HashMap::new();
         if let Ok((_, brn)) = expr("if 1 + 10 - 2 * 5 then 21 else 0") {
-            assert_eq!(eval_va(VarEnv::new(), brn), 0);   
+            assert_eq!(eval_va(program, VarEnv::new(), brn), 0);   
         } else {
             assert!(false);
         }
@@ -192,11 +225,37 @@ mod tests {
     #[test]
     fn eval_va_no_app() {
 
+        let program = HashMap::new();
         let mut var_env = VarEnv::new();
         var_env.update("x".to_owned(), 5);
         var_env.update("y".to_owned(), 7);
         if let Ok((_, brn)) = expr("if x - y then 21 else 5") {
-            assert_eq!(eval_va(var_env, brn), 5);   
+            assert_eq!(eval_va(program, var_env, brn), 5);   
+        } else {
+            assert!(false);
+        }
+    }
+
+    #[test]
+    fn eval_va_mul_brn() {
+
+        let program = HashMap::new();
+        let mut var_env = VarEnv::new();
+        var_env.update("x".to_owned(), 10);
+        var_env.update("y".to_owned(), 1);
+        if let Ok((_, brn)) = expr("if x - 10 then 1 + if y then 23 else 20 else 5") {
+            assert_eq!(eval_va(program, var_env, brn), 21);   
+        } else {
+            assert!(false);
+        }
+    }
+
+    #[test]
+    fn eval_va_app() {
+        let p = parse_program("fact(x) = if x then 1 else fact(x-1) * x");
+        let program = super::super::rec_program_from_decls(p);
+        if let Ok((_, app)) = expr("fact(5)") {
+            assert_eq!(eval_va(program, VarEnv::new(), app), 120);   
         } else {
             assert!(false);
         }
