@@ -26,7 +26,13 @@ evil_undef() = evil_undef() + 1
 
 should_return_1_na_but_diverge_va() = s(z(undef()))
 
-funx() = neg(gt(4, 2)) + gt(2, 4)
+funx(x, y, z) = if x then y else funx(y, z, x)
 
-main() = funx() 
+fn1() = eq(fact(10), 3628800)
+
+fn2() = eq(ackermann(3, 2), 29)
+
+fn3() = eq(ackermann(3, 4), 125)
+
+main() = evil_undef()
 

@@ -1,11 +1,11 @@
-use std::collections::{VecDeque, HashMap};
+use std::{collections::{VecDeque, HashMap}, rc::Rc};
 
 use super::Program;
 
 use crate::interpreter::Term;
 
-#[derive(Debug, Clone)]
-struct VarEnv {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VarEnv {
     memory: HashMap<String, i32>
 }
 
@@ -26,236 +26,219 @@ impl VarEnv {
     }
 }
 
-#[derive(PartialEq, Eq)]
-enum StackOp {
+pub fn fix_point_iteration_va(p: &Program, fn_name: String, args: Vec<i32>) -> i32 {
+    if let Some(d_i) = p.get(&fn_name) {
+
+        let decl_args = d_i.args.clone();
+        
+        let mut rho = VarEnv::new();
+        for (val, var) in args.into_iter().zip(decl_args.clone()) {
+            rho.update(var, val);
+        }
+
+        let var_env = Rc::new(rho);
+
+        
+        let mut kleene_index = 0;
+        let mut result = None;
+        while None == result {
+            kleene_index += 1;
+            let stack = term_tree_to_stack(d_i.expr.clone(), var_env.clone(), kleene_index);
+            result = eval_va_stack(&p, stack.clone());
+        }
+        result.unwrap()
+    } else {
+        panic!("The function {} is not defined.", &fn_name);
+    }
+    
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
+enum TermOrOp {
+    Num(i32),
+    Var(String, Rc<VarEnv>),
     Add,
     Sub,
     Mul,
     Brn,
-    App(String)
+    Block(TermOrOpStack),
+    App(String, Rc<VarEnv>, i32),
 }
 
-#[derive(PartialEq, Eq)]
-struct StackNode {
-    to_do: VecDeque<Term>,
-    done: VecDeque<i32>,
-    op: StackOp
-}
+type TermOrOpStack = VecDeque<TermOrOp>;
 
-impl StackNode {
+///
+/// Takes a term and returns a stack of terms, and operations.
+/// 
+/// Terms include only literals or variables, in couple with the variables environment. Operations include sum, difference, product, branching and function applications. 
+/// 
+/// A branch operation is always followed by two blocks, which are used to group the operations in a same branch, so that's much easier to discard a branch.
+/// 
+/// Function applications are not expanded: this function converges even if there are infinite recursive calls in the program execution.
+fn term_tree_to_stack(term: Term, var_env: Rc<VarEnv>, depth_allowed: i32) -> TermOrOpStack {
+    let mut stack: TermOrOpStack = vec![].into();
 
-    fn new(to_do: Vec<Term>, op: StackOp) -> StackNode {
-        StackNode {
-            to_do: to_do.into(),
-            done: vec![].into(),
-            op
+    match term {
+        Term::Num(n) => stack.push_back(TermOrOp::Num(n)),
+        Term::Var(x) => stack.push_back(TermOrOp::Var(x, var_env)),
+        Term::Add(t1, t2) => {
+            let mut expanded = term_tree_to_stack(*t1, var_env.clone(), depth_allowed);
+            stack.append(&mut expanded);
+            let mut expanded = term_tree_to_stack(*t2, var_env.clone(), depth_allowed);
+            stack.append(&mut expanded);
+            stack.push_back(TermOrOp::Add);
+        },
+        Term::Sub(t1, t2) => {
+            let mut expanded = term_tree_to_stack(*t1, var_env.clone(), depth_allowed);
+            stack.append(&mut expanded);
+            let mut expanded = term_tree_to_stack(*t2, var_env.clone(), depth_allowed);
+            stack.append(&mut expanded);
+            stack.push_back(TermOrOp::Sub);
+        },
+        Term::Mul(t1, t2) => {
+            let mut expanded = term_tree_to_stack(*t1, var_env.clone(), depth_allowed);
+            stack.append(&mut expanded);
+            let mut expanded = term_tree_to_stack(*t2, var_env.clone(), depth_allowed);
+            stack.append(&mut expanded);
+            stack.push_back(TermOrOp::Mul);
+        },
+        Term::Brn(t0, t1, t2) => {
+            let mut expanded = term_tree_to_stack(*t0, var_env.clone(), depth_allowed);
+            stack.append(&mut expanded);
+            stack.push_back(TermOrOp::Brn);
+            let expanded = term_tree_to_stack(*t1, var_env.clone(), depth_allowed);
+            stack.push_back(TermOrOp::Block(expanded));
+            let expanded = term_tree_to_stack(*t2, var_env.clone(), depth_allowed);
+            stack.push_back(TermOrOp::Block(expanded));
+        },
+        Term::App(fn_name, args) => {
+            for arg in args {
+                let mut expanded = term_tree_to_stack(arg, var_env.clone(), depth_allowed);
+                stack.append(&mut expanded);
+            }
+            stack.push_back(TermOrOp::App(fn_name, var_env, depth_allowed));
         }
     }
 
-    fn add(t2: Term) -> StackNode {
-        StackNode::new(vec![t2], StackOp::Add)
-    }
-
-    fn sub(t2: Term) -> StackNode {
-        StackNode::new(vec![t2], StackOp::Sub)
-    }
-
-    fn mul(t2: Term) -> StackNode {
-        StackNode::new(vec![t2], StackOp::Mul)
-    }
-
-    fn brn(t_then: Term, t_else: Term) -> StackNode {
-        StackNode::new(vec![t_then, t_else], StackOp::Brn)
-    }
-
-    fn app(fn_name: String, args: Vec<Term>) -> StackNode {
-        StackNode::new(args, StackOp::App(fn_name))
-    }
-
-    // instance methods
-
-    fn ready(&self) -> bool {
-        self.to_do.len() == 0
-    }
-
+    return stack;
 }
 
-fn eval_va(program: Program, var_env: VarEnv, term: Term) -> i32 {
-    eval_va_aux(program, var_env, term, vec![].into())
-}
-
+///
+/// Evaluates the stack given as input with:
+/// - the function environment \varphi is represented by the program and the kleene iteration index;
+/// - the variable environment is there only when required, i.e. in the evaluation of variable and in function application.
 /// 
-/// evaluates a term and appends the result in the head node of the stack
-fn eval_va_aux(program: Program, var_env: VarEnv, term: Term, mut stack: VecDeque<StackNode>) -> i32 {
+/// \varphi_i is defined as:
+/// - \varphi_0 = {f(args) = \bot, \forall f \in program}
+/// - \varphi_i = {f(args) = [[f.declaration]] \varphi_{i-1} \rho[variables/args], \forall f \in program}
+/// 
+/// It returns:
+/// - None if the function environment is not defined enough to get a result;
+/// - Some(n) where n is the result of the evaluation.
+fn eval_va_stack(program: &Program, mut stack: TermOrOpStack) -> Option<i32> {
 
-    let mut last_computed_val: i32;
-
-    match term {
-        Term::Num(n) => {
-            last_computed_val = n;
-        },
-        Term::Var(x) => {
-            last_computed_val = var_env.lookup(&x);
-        },
-        Term::Add(t1, t2) => {
-            let node = StackNode::add(*t2);
-            stack.push_front(node);
-            return eval_va_aux(program, var_env, *t1, stack);
-        },
-        Term::Sub(t1, t2) => {
-            let node = StackNode::sub(*t2);
-            stack.push_front(node);
-            return eval_va_aux(program, var_env, *t1, stack);
-        },
-        Term::Mul(t1, t2) => {
-            let node = StackNode::mul(*t2);
-            stack.push_front(node);
-            return eval_va_aux(program, var_env, *t1, stack);
-        },
-        Term::Brn(t_pred, t_then, t_else) => {
-            let node = StackNode::brn(*t_then, *t_else);
-            stack.push_front(node);
-            return eval_va_aux(program, var_env, *t_pred, stack);
-        },
-        Term::App(fn_name, args) => {
-            if let [head, tail @ ..] = args.as_slice() {
-                let node = StackNode::app(fn_name, Vec::from(tail));
-                stack.push_front(node);
-                return eval_va_aux(program, var_env, head.clone(), stack);
-            } else {
-                if let Some(decl) = program.get(&fn_name) {
-                    let expr = decl.expr.clone();
-                    let rho = VarEnv::new();
-                    last_computed_val = eval_va_aux(program.clone(), rho, expr, vec![].into());
+    let mut computed = vec![];
+    
+    while let Some(term_or_op) = stack.pop_front() {
+        match term_or_op {
+            TermOrOp::Num(n) => {
+                computed.push(n);
+            },
+            TermOrOp::Var(x, rho) => {
+                computed.push(rho.lookup(&x));
+            },
+            TermOrOp::Add => {
+                let v2 = computed.pop().unwrap();
+                let v1 = computed.pop().unwrap();
+                computed.push(v1 + v2);
+            },
+            TermOrOp::Sub => {
+                let v2 = computed.pop().unwrap();
+                let v1 = computed.pop().unwrap();
+                computed.push(v1 - v2);
+            },
+            TermOrOp::Mul => {
+                let v2 = computed.pop().unwrap();
+                let v1 = computed.pop().unwrap();
+                computed.push(v1 * v2);
+            },
+            TermOrOp::Brn => {
+                let v0 = computed.pop().unwrap();
+                let then_branch = stack.pop_front().unwrap();
+                let else_branch = stack.pop_front().unwrap();
+                
+                if v0 == 0 {
+                    stack.push_front(then_branch);
                 } else {
-                    panic!("The function {} is not defined.", fn_name);
+                    stack.push_front(else_branch);
+                }
+            },
+            TermOrOp::Block(mut other) => {
+                other.append(&mut stack);
+                stack = other;
+            },
+            TermOrOp::App(fn_name, rho, depth_allowed) => {
+                // simulating the kleene index as a limit on the number of function calls
+                if depth_allowed == 0 {
+                    // \varphi = \varphi_0
+                    return None;
+                }
+                if let Some(decl) = program.get(&fn_name) {
+                    let mut rho = (*rho).clone();
+                    for arg_name in decl.args.iter().rev() {
+                        let arg_val = computed.pop().unwrap();
+                        rho.update(arg_name.clone(), arg_val);
+                    }
+                    
+                    let mut expanded_function = term_tree_to_stack(decl.expr.clone(), Rc::new(rho), depth_allowed - 1);
+                    expanded_function.append(&mut stack);
+                    stack = expanded_function;
+                } else {
+                    panic!("Function named {} is not defined", fn_name);
                 }
             }
         }
-    };
-
-    loop { // this loop climbs back the right side of the tree (il versante destro dell'albero)
-    // this loop converges when stack is not infinite
-        if let Some(mut last_node) = stack.pop_front() {
-
-            // each iteration takes the last pending operation (the parent in the tree)
-            last_node.done.push_front(last_computed_val);
-            // ..and update the child's computation result
-
-            // if it's a branch, then its result is the evaluation of one of the two children
-            if last_node.op == StackOp::Brn {
-                // we can cut the branch node and substitute it with the child
-                // stack.pop_front();
-                if *last_node.done.get(0).unwrap() == 0 {
-                    return eval_va_aux(program, var_env, last_node.to_do.get(0).unwrap().clone(), stack);
-                } else {
-                    return eval_va_aux(program, var_env, last_node.to_do.get(1).unwrap().clone(), stack);
-                } 
-            }
-            // .. otherwise we need to compute each of the children ...
-
-            if let Some(next_term) = last_node.to_do.pop_front() {
-                // if there are some terms, we need to compute them
-                // the parent stays 
-                stack.push_front(last_node);
-                return eval_va_aux(program, var_env, next_term, stack);
-
-            } else {
-                
-                let v: i32;
-                match last_node.op {
-                    StackOp::Add => {
-                        v = last_node.done.get(1).unwrap() + last_node.done.get(0).unwrap();
-                    },
-                    StackOp::Sub => {
-                        v = last_node.done.get(1).unwrap() - last_node.done.get(0).unwrap();
-                    },
-                    StackOp::Mul => {
-                        v = last_node.done.get(1).unwrap() * last_node.done.get(0).unwrap();
-                    },
-                    StackOp::Brn => panic!("There should not be any Brn in evaluation"),
-                    StackOp::App(fn_name) => {
-                        if let Some(decl) = program.get(&fn_name) {
-                            let args = decl.args.clone();
-                            let expr = decl.expr.clone();
-                            let mut rho = VarEnv::new();
-                            for (val, var) in last_node.done.into_iter().zip(args.clone()) {
-                                rho.update(var, val);
-                            }
-                            v = eval_va_aux(program.clone(), rho, expr, vec![].into());
-                        } else {
-                            panic!("The function {} is not defined.", fn_name);
-                        }
-                    }
-                    
-                };
-                // stack.pop_front();
-                // since we computed the node, we can remove it and..
-
-                // if it was child of another node (i.e. the one that's now the head of the stack)
-                // we append the value calculated to it and iterate this loop again
-                // "keep climbing"
-                last_computed_val = v;
-                
-            }
-        } else {
-            // if there is no more tree to climb we just return the value
-            return last_computed_val;
-        }
+    }
+    if let [head] = &computed[..] {
+        return Some(*head);
+    } else {
+        panic!("More computed values when the stack is empty: {:?}.", computed);
     }
 }
 
 
 #[cfg(test)]
 mod tests {
-    use crate::parser::{expr, parse_program};
+    use crate::parser::expr;
 
     use super::*;
 
     #[test]
-    fn eval_va_no_app_no_var() {
-        let program = HashMap::new();
-        if let Ok((_, brn)) = expr("if 1 + 10 - 2 * 5 then 21 else 0") {
-            assert_eq!(eval_va(program, VarEnv::new(), brn), 0);   
-        } else {
-            assert!(false);
-        }
-    }
-
-    #[test]
-    fn eval_va_no_app() {
-
-        let program = HashMap::new();
-        let mut var_env = VarEnv::new();
-        var_env.update("x".to_owned(), 5);
-        var_env.update("y".to_owned(), 7);
-        if let Ok((_, brn)) = expr("if x - y then 21 else 5") {
-            assert_eq!(eval_va(program, var_env, brn), 5);   
-        } else {
-            assert!(false);
-        }
-    }
-
-    #[test]
-    fn eval_va_mul_brn() {
-
-        let program = HashMap::new();
-        let mut var_env = VarEnv::new();
-        var_env.update("x".to_owned(), 10);
-        var_env.update("y".to_owned(), 1);
-        if let Ok((_, brn)) = expr("if x - 10 then 1 + if y then 23 else 20 else 5") {
-            assert_eq!(eval_va(program, var_env, brn), 21);   
-        } else {
-            assert!(false);
-        }
-    }
-
-    #[test]
-    fn eval_va_app() {
-        let p = parse_program("fact(x) = if x then 1 else fact(x-1) * x");
-        let program = super::super::rec_program_from_decls(p);
-        if let Ok((_, app)) = expr("fact(5)") {
-            assert_eq!(eval_va(program, VarEnv::new(), app), 120);   
+    fn stack_semantics_test() {
+        let rho = Rc::new(VarEnv::new());
+        let expected: TermOrOpStack = [
+            TermOrOp::Var("x".to_string(), rho.clone()),
+            TermOrOp::Num(10), 
+            TermOrOp::Sub, 
+            TermOrOp::Brn, 
+            TermOrOp::Block([
+                TermOrOp::Num(1),
+                TermOrOp::Var("y".to_string(), rho.clone()), 
+                TermOrOp::Brn, 
+                TermOrOp::Block([
+                    TermOrOp::Num(23)
+                ].into()), 
+                TermOrOp::Block([
+                    TermOrOp::Num(20)
+                ].into()), 
+                TermOrOp::Add
+            ].into()), 
+            TermOrOp::Block([
+                TermOrOp::Num(5)
+            ].into())
+        ].into();
+        if let Ok((_, expr)) = expr("if x - 10 then 1 + if y then 23 else 20 else 5") {
+            assert_eq!(term_tree_to_stack(expr, rho.clone(), 1), expected);
         } else {
             assert!(false);
         }
