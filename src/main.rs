@@ -1,6 +1,8 @@
 // mod parser;
 mod parser;
 mod interpreter;
+mod stack_interpreter;
+mod utils;
 
 use std::env;
 
@@ -47,7 +49,7 @@ fn main() {
                 println!("Call by value result => {}", result);
             },
             "cbvo" => {
-                let result = interpreter::run_rec_program_va_opt(decls);
+                let result = stack_interpreter::run_rec_program_va_opt(decls);
                 println!("Call by value (optimized) result => {}", result);
             },
             option => {
