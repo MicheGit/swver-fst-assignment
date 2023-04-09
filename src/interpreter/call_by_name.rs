@@ -1,4 +1,3 @@
-use std::fmt::Debug;
 use std::{collections::HashMap, rc::Rc};
 
 use super::Program;
@@ -39,6 +38,7 @@ type FnEnv = HashMap<String, Rc<dyn Fn(Vec<LazyI32>) -> Option<i32>>>;
 
 // VarEnv_na
 type VarEnv = Env<LazyI32>;
+
 
 fn delta_0_na(p: &Program) -> FnEnv {
     let mut phi: FnEnv = HashMap::new();

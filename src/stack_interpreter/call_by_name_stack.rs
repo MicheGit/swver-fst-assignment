@@ -1,8 +1,16 @@
-use std::rc::Rc;
+use std::{rc::Rc, collections::HashMap};
 
 use crate::utils::Program;
 
 use super::{term_tree_to_stack, TermOrOpStack, TermOrOp};
+
+struct LazyEval {
+    term: <TermOrOp<LazyEval>>
+}
+
+impl LazyEval {
+    pub fn new()
+}
 
 pub fn fix_point_iteration_na(p: &Program, fn_name: String, args: Vec<i32>) -> i32 {
     if let Some(d_i) = p.get(&fn_name) {
@@ -95,7 +103,7 @@ fn eval_na_stack(program: &Program, mut stack: TermOrOpStack) -> Option<i32> {
 fn force_eval(t: TermOrOp) -> i32 {
     match t {
         TermOrOp::Num(n) => n,
-        TermOrOp::Var(x, rho) => rho.lookup(&x),
+        TermOrOp::Var(x, rho) => rho.lookup(&x).deref(),
         _ => panic!("force_eval used with {:?}", t)
     }
 }
