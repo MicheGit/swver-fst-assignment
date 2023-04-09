@@ -1,23 +1,16 @@
 mod call_by_value_stack;
-mod call_by_name_stack;
 
-use std::collections::{VecDeque, HashMap};
+use std::collections::VecDeque;
 use std::rc::Rc;
 
 use crate::parser::{Decl, Term};
-use crate::utils::rec_program_from_decls;
+use crate::utils::{rec_program_from_decls, VarEnv};
 
 
 pub fn run_rec_program_va_opt(decls: Vec<Decl>) -> i32 {
     let program = rec_program_from_decls(decls);
     call_by_value_stack::fix_point_iteration_va(&program, "main".to_owned(), vec![])
 }
-
-pub fn run_rec_program_na_opt(decls: Vec<Decl>) -> i32 {
-    let program = rec_program_from_decls(decls);
-    call_by_name_stack::fix_point_iteration_na(&program, "main".to_owned(), vec![])
-}
-
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 enum TermOrOp {
@@ -87,26 +80,4 @@ fn term_tree_to_stack(term: Term, var_env: Rc<VarEnv>, depth_allowed: i32) -> Te
     }
 
     return stack;
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct VarEnv {
-    memory: HashMap<String, i32>
-}
-
-impl VarEnv {
-    fn new() -> VarEnv {
-        VarEnv { memory: HashMap::new() }
-    }
-    
-    fn update(&mut self, arg_name: String, arg_val: i32) -> () {
-        self.memory.insert(arg_name, arg_val);
-    }
-
-    fn lookup(&self, var: &String) -> i32 {
-        match self.memory.get(var) {
-            Some(n) => *n,
-            None => panic!("The variable {} is not defined.", var)
-        }
-    }
 }
