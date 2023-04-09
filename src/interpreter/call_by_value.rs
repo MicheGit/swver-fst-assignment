@@ -2,7 +2,7 @@ use std::{collections::HashMap, rc::Rc};
 
 use super::Program;
 
-use crate::interpreter::Term;
+use crate::{interpreter::Term, utils::Env};
 
 /// 
 /// Finds the fix point of the functional induced by the program p, 
@@ -37,27 +37,7 @@ impl Drop for PrintOnDrop {
 }
 
 // VarEnv_va
-#[derive(Debug, Clone)]
-struct VarEnv {
-    memory: HashMap<String, i32>
-}
-
-impl VarEnv {
-    fn new() -> VarEnv {
-        VarEnv { memory: HashMap::new() }
-    }
-    
-    fn update(&mut self, arg_name: String, arg_val: i32) -> () {
-        self.memory.insert(arg_name, arg_val);
-    }
-
-    fn lookup(&self, var: &String) -> i32 {
-        match self.memory.get(var) {
-            Some(n) => *n,
-            None => panic!("The variable {} is not defined.", var)
-        }
-    }
-}
+type VarEnv = Env<i32>;
 
 fn delta_0_va(p: &Program) -> FnEnv {
     let mut phi: FnEnv = HashMap::new();

@@ -4,6 +4,7 @@ use std::{collections::HashMap, rc::Rc};
 use super::Program;
 
 use crate::interpreter::Term;
+use crate::utils::{LazyI32, Env};
 
 /// 
 /// Finds the fix point of the functional induced by the program p, 
@@ -33,60 +34,11 @@ pub fn fix_point_iteration_na(p: &Program, fn_name: String, args: Vec<i32>) -> i
     }
 }
 
-#[derive(Clone)]
-struct LazyI32 {
-    function: Rc<dyn Fn() -> Option<i32>>,
-    result: Option<Option<i32>>
-}
-
-impl LazyI32 {
-
-    fn new(function: Rc<dyn Fn() -> Option<i32>>) -> LazyI32 {
-        LazyI32 { function, result: None }
-    }
-
-    // se è none allora equivale a \bot, ma il calcolo è avvenuto
-    fn deref(&mut self) -> Option<i32> {
-        match self.result {
-            None => {
-                let val = (self.function)();
-                self.result = Some(val);
-                val
-            },
-            Some(val) => val
-        }
-    }
-}
-
-impl Debug for LazyI32 {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("LazyI32").field("result", &self.result).finish()
-    }
-}
-
 // FnEnv_na
 type FnEnv = HashMap<String, Rc<dyn Fn(Vec<LazyI32>) -> Option<i32>>>;
 
 // VarEnv_na
-#[derive(Debug, Clone)]
-struct VarEnv {
-    memory: HashMap<String, LazyI32>
-}
-
-impl VarEnv {
-    pub fn new() -> VarEnv {
-        VarEnv { memory: HashMap::new() }
-    }
-    fn update(&mut self, arg_name: String, arg_val: LazyI32) -> () {
-        self.memory.insert(arg_name, arg_val);
-    }
-    fn lookup(&self, var: &String) -> LazyI32 {
-        match self.memory.get(var) {
-            Some(term) => term.clone(),
-            None => panic!("The variable {} is not defined.", var)
-        }
-    }
-}
+type VarEnv = Env<LazyI32>;
 
 fn delta_0_na(p: &Program) -> FnEnv {
     let mut phi: FnEnv = HashMap::new();
