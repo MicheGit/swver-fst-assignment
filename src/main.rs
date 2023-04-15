@@ -50,7 +50,7 @@ fn main() {
                 println!("Call by value result => {}", result);
             },
             "cbvo" => {
-                let result = stack_interpreter::run_rec_program_va_opt(decls);
+                let result = stack_interpreter::run_rec_program_va(decls);
                 println!("Call by value (optimized) result => {}", result);
             },
             option => {

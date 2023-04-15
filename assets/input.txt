@@ -34,5 +34,7 @@ fn2() = eq(ackermann(3, 2), 29)
 
 fn3() = eq(ackermann(3, 4), 125)
 
-main() = ackermann(3, 1)
+fn4() = eq(ackermann(3, 1), 13)
+
+main() = ackermann(2, 10)
 

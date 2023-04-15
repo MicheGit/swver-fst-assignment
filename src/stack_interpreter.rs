@@ -7,7 +7,7 @@ use crate::parser::{Decl, Term};
 use crate::utils::{rec_program_from_decls, VarEnv};
 
 
-pub fn run_rec_program_va_opt(decls: Vec<Decl>) -> i32 {
+pub fn run_rec_program_va(decls: Vec<Decl>) -> i32 {
     let program = rec_program_from_decls(decls);
     call_by_value_stack::fix_point_iteration_va(&program, "main".to_owned(), vec![])
 }
