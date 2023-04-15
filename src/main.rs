@@ -21,15 +21,16 @@ fn get_input_text() -> String {
 
 /// Run this program with
 ///         cargo run [-- {options}]
-///     where options may be:
+///     where the options might be:
 /**
  * cbv => call by value
  * cbvo => an optimized version of cbv
  * cbn => call by name
  */
-/// If no option is given then the program runs only one time in
-///  cbvo mode. Example: run in call by name mode
+/// If no option is given, the program runs only one time in
+///  cbvo mode. 
 /// 
+/// Example: run in call by name mode:
 ///     cargo run -- cbn
 fn main() {
     let content = get_input_text();

@@ -29,7 +29,6 @@ pub struct Decl {
 pub enum Term {
     Num(i32),
     Var(String),
-    // Neg(Box<Term>),
     Add(Box<Term>, Box<Term>),
     Sub(Box<Term>, Box<Term>),
     Mul(Box<Term>, Box<Term>),

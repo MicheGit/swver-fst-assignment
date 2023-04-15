@@ -53,8 +53,6 @@ fn functional_va(p: &Program, phi: FnEnv) -> FnEnv {
         let expr_to_move = decl.expr.clone();
 
         let phi_i = Rc::new(move |vs: Vec<i32>| {
-            // println!("Entering phi_i");
-            // let _overwritten = PrintOnDrop("Closed phi_i stack");
             let mut rho = VarEnv::new();
             for (val, var) in vs.into_iter().zip(args_to_move.clone()) {
                 rho.update(var, val);
@@ -96,8 +94,6 @@ fn eval_va(fn_env: FnEnv, var_env: VarEnv, term: Term) -> Option<i32> {
             }
         },
         Term::App(fn_name, args) => {
-            // println!("Entering APP");
-            // let _overwritten = PrintOnDrop("Closed APP stack");
 
             let mut vs = vec![];
             for arg in args {
