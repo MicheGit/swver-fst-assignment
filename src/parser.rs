@@ -100,8 +100,8 @@ fn expr_helper(priority: u8, input: &str) -> IResult<&str, Term> {
         if op_prio < priority {
             break;
         }
-        // in precedence climbing si aggiunge 1 alla priorità solo se l'operatore matchato è left recursive
-        // in questo caso sono tutti left recursive quindi aggiungo +1 a prescindere
+        // in precedence climbing si aggiunge 1 alla priorità solo se l'operatore matchato è left associative
+        // in questo caso sono tutti left associative quindi aggiungo +1 a prescindere
         let (input2, t2) = expr_helper(op_prio + 1, right_side)?;
         t1 = op_cons(Box::new(t1.clone()), Box::new(t2));
         input = input2;
