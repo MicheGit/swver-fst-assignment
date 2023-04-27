@@ -8,18 +8,6 @@ ackermann(x, y) = if x then y+1 else (if y then ackermann(x-1, 1) else ackermann
 
 true() = 0
 
-z(x) = 0
-s(x) = x + 1
-neg(x) = if x then 1 else 0
-and(x, y) = x * y
-eq(x, y) = x - y
-sign(x) = if x then 0 else sign1(x, 0 - x)
-sign1(x,y) = if x then 1 else (if y then -1 else sign1(x-1, y-1))
-lt(x, y) = sign(x - y) + 1
-gt(x, y) = if eq(x, y) then 1 else neg(lt(x, y))
-
-mult(x, y) = if y then 0 else if y-1 then x else x + mult(x, y-1)
-
 undef() = undef()
 
 evil_undef() = evil_undef() + 1
@@ -36,5 +24,18 @@ fn3() = eq(ackermann(3, 4), 125)
 
 fn4() = eq(ackermann(3, 1), 13)
 
-main() = ackermann(2, 10)
+
+z(x) = 0
+s(x) = x + 1
+neg(x) = if x then 1 else 0
+and(x, y) = x * y
+eq(x, y) = x - y
+sign(x) = if x then 0 else sign1(x, 0 - x)
+sign1(x,y) = if x then 1 else (if y then -1 else sign1(x-1, y-1))
+lt(x, y) = sign(x - y) + 1
+gt(x, y) = if eq(x, y) then 1 else neg(lt(x, y))
+
+mult(x, y) = if y then 0 else if y-1 then x else x + mult(x, y-1)
+
+main() = z(evil_undef())
 
